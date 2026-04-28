@@ -2,6 +2,15 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  min-height: 100%;
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 body {
   margin: 0;
   background:
@@ -10,6 +19,7 @@ body {
     #020617;
   color: #e5e7eb;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-overflow-scrolling: touch;
 }
 
 button,
@@ -21,7 +31,8 @@ select {
 main {
   width: min(1500px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 32px 0 60px;
+  padding: 32px 0 180px;
+  min-height: 100vh;
 }
 
 .hero {
@@ -178,11 +189,13 @@ button.secondary {
   grid-template-columns: minmax(0, 1fr) 520px;
   gap: 22px;
   align-items: start;
+  overflow: visible;
 }
 
 .list {
   display: grid;
   gap: 14px;
+  overflow: visible;
 }
 
 .pair-card {
@@ -339,11 +352,17 @@ button.secondary {
   background: rgba(15, 23, 42, 0.74);
   border-radius: 30px;
   padding: 24px;
+  overflow: visible;
+  max-height: none;
 }
 
 .sticky-panel {
-  position: sticky;
-  top: 18px;
+  position: relative;
+  top: auto;
+  overflow: visible;
+  max-height: none;
+  align-self: start;
+  margin-bottom: 160px;
 }
 
 .panel h2 {
@@ -389,6 +408,8 @@ button.secondary {
   padding: 18px;
   color: #cbd5e1;
   line-height: 1.6;
+  max-height: none;
+  overflow: visible;
 }
 
 .rule-box h4,
@@ -411,10 +432,26 @@ button.secondary {
   border: 1px solid rgba(148, 163, 184, 0.16);
 }
 
+.alert-preview {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(2, 6, 23, 0.62);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: #d1fae5;
+  border-radius: 16px;
+  padding: 14px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  max-height: none;
+  overflow: visible;
+}
+
 .dex-link {
   display: block;
   text-align: center;
   margin-top: 18px;
+  margin-bottom: 80px;
   padding: 15px;
   background: #f8fafc;
   color: #020617;
@@ -435,11 +472,12 @@ button.secondary {
 }
 
 @media (max-width: 1100px) {
-  .hero,
-  .layout {
-    grid-template-columns: 1fr;
+  main {
+    padding-bottom: 220px;
   }
 
+  .hero,
+  .layout,
   .toolbar {
     grid-template-columns: 1fr;
   }
@@ -449,7 +487,13 @@ button.secondary {
   }
 
   .sticky-panel {
-    position: static;
+    position: relative;
+    top: auto;
+    margin-bottom: 220px;
+  }
+
+  .panel {
+    margin-bottom: 220px;
   }
 }
 
@@ -457,10 +501,25 @@ button.secondary {
   main {
     width: min(100% - 20px, 1500px);
     padding-top: 14px;
+    padding-bottom: 260px;
   }
 
   .hero {
     padding: 22px;
+    border-radius: 22px;
+  }
+
+  h1 {
+    font-size: clamp(38px, 13vw, 62px);
+  }
+
+  .sub {
+    font-size: 17px;
+  }
+
+  .pair-top,
+  .detail-head {
+    flex-direction: column;
   }
 
   .score-grid,
@@ -469,89 +528,18 @@ button.secondary {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
   .stats {
     grid-template-columns: 1fr;
   }
-}
 
-.alert-preview {
-  white-space: pre-wrap;
-  word-break: break-word;
-  background: rgba(2, 6, 23, 0.62);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  color: #d1fae5;
-  border-radius: 16px;
-  padding: 14px;
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-/* SNITCH X mobile/detail scroll fix */
-html,
-body,
-#root {
-  min-height: 100%;
-  height: auto;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-body {
-  -webkit-overflow-scrolling: touch;
-}
-
-main {
-  min-height: 100vh;
-  padding-bottom: 140px;
-}
-
-.layout {
-  align-items: start;
-}
-
-.panel,
-.sticky-panel {
-  max-height: none;
-  overflow: visible;
-}
-
-.rule-box,
-.alert-preview {
-  max-height: none;
-  overflow: visible;
-}
-
-@media (max-width: 1100px) {
-  .layout {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .sticky-panel {
-    position: relative;
-    top: auto;
-  }
-
-  .panel {
-    margin-bottom: 120px;
-  }
-}
-
-@media (max-width: 700px) {
-  main {
-    padding-bottom: 180px;
-  }
-
-  .hero,
   .panel,
   .empty,
   .pair-card {
     border-radius: 22px;
-  }
-
-  .detail-grid {
-    grid-template-columns: 1fr;
   }
 
   .rule-box {
@@ -561,5 +549,9 @@ main {
   .alert-preview {
     font-size: 12px;
     line-height: 1.5;
+  }
+
+  .dex-link {
+    margin-bottom: 120px;
   }
 }

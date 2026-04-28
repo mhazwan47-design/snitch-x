@@ -486,3 +486,80 @@ button.secondary {
   font-size: 13px;
   line-height: 1.55;
 }
+
+/* SNITCH X mobile/detail scroll fix */
+html,
+body,
+#root {
+  min-height: 100%;
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body {
+  -webkit-overflow-scrolling: touch;
+}
+
+main {
+  min-height: 100vh;
+  padding-bottom: 140px;
+}
+
+.layout {
+  align-items: start;
+}
+
+.panel,
+.sticky-panel {
+  max-height: none;
+  overflow: visible;
+}
+
+.rule-box,
+.alert-preview {
+  max-height: none;
+  overflow: visible;
+}
+
+@media (max-width: 1100px) {
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .sticky-panel {
+    position: relative;
+    top: auto;
+  }
+
+  .panel {
+    margin-bottom: 120px;
+  }
+}
+
+@media (max-width: 700px) {
+  main {
+    padding-bottom: 180px;
+  }
+
+  .hero,
+  .panel,
+  .empty,
+  .pair-card {
+    border-radius: 22px;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rule-box {
+    margin-bottom: 18px;
+  }
+
+  .alert-preview {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+}

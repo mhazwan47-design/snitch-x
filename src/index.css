@@ -473,3 +473,16 @@ button.secondary {
     grid-template-columns: 1fr;
   }
 }
+
+.alert-preview {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(2, 6, 23, 0.62);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: #d1fae5;
+  border-radius: 16px;
+  padding: 14px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}

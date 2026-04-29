@@ -1,0 +1,8 @@
+{
+  "version": "v9-trade-action-center",
+  "updatedAt": null,
+  "meta": {
+    "message": "SNITCH X v9 DB. Trade Action Center reads existing records; worker remains compatible."
+  },
+  "records": []
+}

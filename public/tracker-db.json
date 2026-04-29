@@ -1,8 +1,8 @@
 {
-  "version": "v7-category-performance-lab",
+  "version": "v7.1-prime-category-full-worker",
   "updatedAt": null,
   "meta": {
-    "message": "Initial DB for v7 category performance lab. Import older JSON to preserve existing records."
+    "message": "SNITCH X v7.1 DB. Full GitHub Actions worker updates this database every schedule run."
   },
   "records": []
 }

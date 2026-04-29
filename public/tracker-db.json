@@ -1,5 +1,8 @@
 {
-  "version": "v5-worker",
+  "version": "v7-category-performance-lab",
   "updatedAt": null,
+  "meta": {
+    "message": "Initial DB for v7 category performance lab. Import older JSON to preserve existing records."
+  },
   "records": []
 }

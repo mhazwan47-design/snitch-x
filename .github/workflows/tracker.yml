@@ -1,1 +1,37 @@
+name: SNITCH X Background Tracker
 
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snitch-x-tracker
+  cancel-in-progress: true
+
+jobs:
+  tracker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run SNITCH X full background worker
+        run: node scripts/tracker-worker.mjs
+
+      - name: Commit tracker database
+        run: |
+          git config user.name "snitch-x-bot"
+          git config user.email "actions@github.com"
+          git add public/tracker-db.json
+          git diff --cached --quiet && echo "No tracker changes" || git commit -m "Update SNITCH X tracker database"
+          git push

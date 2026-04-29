@@ -1,0 +1,8 @@
+{
+  "version": "v8-soft-security-gate",
+  "updatedAt": null,
+  "meta": {
+    "message": "SNITCH X v8 DB. Adds soft security scoring. Existing records remain compatible; new updates add securityScore/securityStatus."
+  },
+  "records": []
+}

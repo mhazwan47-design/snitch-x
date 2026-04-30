@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      test_telegram:
+        description: "Send Telegram test message only"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: write
@@ -26,9 +35,14 @@ jobs:
           node-version: 20
 
       - name: Run SNITCH X full background worker
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_TELEGRAM: ${{ github.event.inputs.test_telegram }}
         run: node scripts/tracker-worker.mjs
 
       - name: Commit tracker database
+        if: ${{ github.event.inputs.test_telegram != 'true' }}
         run: |
           git config user.name "snitch-x-bot"
           git config user.email "actions@github.com"

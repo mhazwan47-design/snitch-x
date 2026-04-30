@@ -1,0 +1,9 @@
+{
+  "version": "v10-telegram-success-forecast",
+  "updatedAt": null,
+  "meta": {
+    "message": "SNITCH X v10 DB. Telegram alerts use GitHub Secrets. Success Forecast records TP1/TP2 hits."
+  },
+  "records": [],
+  "successForecasts": []
+}

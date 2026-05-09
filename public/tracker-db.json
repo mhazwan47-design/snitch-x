@@ -1,0 +1,9 @@
+{
+  "version": "v10.12-valid-list-cleanup",
+  "updatedAt": null,
+  "meta": {
+    "message": "SNITCH X v10.12 Valid List Cleanup: keep only active valid setups, success records, and diary. Invalid/stale/past-target records are pruned."
+  },
+  "records": [],
+  "successForecasts": []
+}

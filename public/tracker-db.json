@@ -1,0 +1,8 @@
+{
+  "version": "v10.14.4-stable-ui-recovery",
+  "records": [],
+  "successForecasts": [],
+  "meta": {
+    "message": "Stable UI recovery. Active records rebuilt by workflow. If UI was blank, this reverts frontend to stable v10.13 base while keeping expanded backend worker."
+  }
+}

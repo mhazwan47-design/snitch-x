@@ -1,0 +1,9 @@
+{
+  "version": "v10.13-fresh-active-db",
+  "updatedAt": null,
+  "meta": {
+    "message": "v10.13 Fresh Active DB: active records reset and rebuilt every worker run. History only kept in successForecasts and user diary."
+  },
+  "records": [],
+  "successForecasts": []
+}

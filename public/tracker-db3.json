@@ -1,0 +1,9 @@
+{
+  "version": "v10.12.1-worker-async-patch",
+  "updatedAt": null,
+  "meta": {
+    "message": "SNITCH X v10.12.1 fixes tracker-worker async syntax error while keeping valid list cleanup."
+  },
+  "records": [],
+  "successForecasts": []
+}

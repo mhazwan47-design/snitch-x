@@ -1,0 +1,9 @@
+{
+  "version": "v10.14.1-zero-list-hotfix",
+  "updatedAt": null,
+  "meta": {
+    "message": "v10.14.1 zero-list hotfix: if strict fresh validation returns zero records, worker keeps relaxed top candidates so site is not empty."
+  },
+  "records": [],
+  "successForecasts": []
+}

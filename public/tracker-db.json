@@ -1,0 +1,8 @@
+{
+  "version": "v10.15.3-react31-object-patch",
+  "records": [],
+  "successForecasts": [],
+  "meta": {
+    "message": "Fixes React error #31: route objects rendered directly are sanitized to text."
+  }
+}

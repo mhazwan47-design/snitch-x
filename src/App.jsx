@@ -249,8 +249,8 @@ function groupSuccess(records){
 function Header({status, sync}){
   return <header className="hero">
     <div>
-      <p className="eyebrow">SNITCH X · Real Data Execution Radar v10.20.1</p>
-      <h1>Real Data Execution Radar active</h1>
+      <p className="eyebrow">SNITCH X · Real Data Execution Radar v10.20.2</p>
+      <h1>Real Data Execution Radar live</h1>
       <p className="sub">Scans Binance opportunities with measured-data gates, hides weak setups, and displays only direct BUY/SELL execution actions.</p>
     </div>
     <div className="hero-card sync-card">

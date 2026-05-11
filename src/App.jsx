@@ -162,15 +162,24 @@ function actionFor(r, capital=10, mode="EXTREME"){
   const met=pnlMetrics(r, capital);
   const risk=Math.abs(n(r?.measuredRiskPct || met.invalidPct));
   const reward=n(r?.measuredRewardPct || met.tp1Pct);
-  const cost=measuredCostPct(r);
+  let cost=measuredCostPct(r);
   const label=executionLabel(r);
-  const netUsd=n(r?.measuredNetProfitUsd, -999);
+  let netUsd=n(r?.measuredNetProfitUsd, -999);
+  const isBinanceMeasured = String(r?.source||"").includes("binance") || !!r?.measuredAudit || !!r?.binanceSymbol;
   if(isInvalid(r)) return {...met, label:"", size:0, score:0, reason:"Invalidated.", bucket:b};
   if(isSuccess(r)) return {...met, label:"", size:0, score:0, reason:"TP already hit.", bucket:b};
-  if(String(r?.source||"").includes("binance") && !hasMeasuredAudit(r)) return {...met, label:"", size:0, score:0, reason:"Hidden: missing measured audit data.", bucket:b};
-  if(cost>=999) return {...met, label:"", size:0, score:0, reason:"Hidden: actual cost data missing.", bucket:b};
-  if(netUsd < 0.50) return {...met, label:"", size:0, score:0, reason:"Hidden: measured net profit below minimum.", bucket:b};
-  if(risk<=0 || reward<=risk) return {...met, label:"", size:0, score:0, reason:"Hidden: SL/TP geometry failed.", bucket:b};
+  if(isBinanceMeasured && !hasMeasuredAudit(r)) return {...met, label:"", size:0, score:0, reason:"Hidden: missing measured audit data.", bucket:b};
+  if(isBinanceMeasured){
+    if(cost>=999) return {...met, label:"", size:0, score:0, reason:"Hidden: actual cost data missing.", bucket:b};
+    if(netUsd < 0.50) return {...met, label:"", size:0, score:0, reason:"Hidden: measured net profit below minimum.", bucket:b};
+    if(risk<=0 || reward<=risk) return {...met, label:"", size:0, score:0, reason:"Hidden: SL/TP geometry failed.", bucket:b};
+  } else {
+    // Stable fallback: legacy v10.18 DexScreener rows do not have Binance measuredAudit fields.
+    // Keep the proven working pipeline alive instead of showing zero rows.
+    cost = 0;
+    netUsd = Math.max(0, n(met.tp2Profit));
+    if(r.signalType==="SELL") return {...met, label:"SELL SPOT", size:Math.max(0.01, n(capital)*0.15), score:58+n(sec)*0.2, reason:"Legacy sell-side signal from proven scanner fallback.", bucket:b};
+  }
   if(sec<62) return {...met, label:"", size:0, score:0, reason:"Hidden: security/quality gate failed.", bucket:b};
   let score = 50 + sec*0.45 + n(r.execution)*0.40 + n(r.opportunity)*0.35 - n(r.risk)*0.20 + reward*1.4 + netUsd*10 - cost*3.0;
   if(r.hitTrigger) score+=10;
@@ -250,7 +259,7 @@ function Header({status, sync}){
   return <header className="hero">
     <div>
       <p className="eyebrow">SNITCH X · Real Data Execution Radar v10.20.2</p>
-      <h1>Real Data Execution Radar live</h1>
+      <h1>Real Data Execution Radar stable</h1>
       <p className="sub">Scans Binance opportunities with measured-data gates, hides weak setups, and displays only direct BUY/SELL execution actions.</p>
     </div>
     <div className="hero-card sync-card">

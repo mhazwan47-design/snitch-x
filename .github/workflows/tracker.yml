@@ -50,6 +50,7 @@ jobs:
           BINANCE_MARGIN_TAKER_FEE_BPS: 10
           SNITCH_TRADE_NOTIONAL_USD: 10
           SNITCH_MIN_NET_PROFIT_USD: 0.50
+          SNITCH_ENABLE_DEX_LEGACY: "true"
         run: node scripts/tracker-worker.mjs
 
       - name: Commit tracker database

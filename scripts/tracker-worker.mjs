@@ -12,7 +12,7 @@ const BINANCE_STABLE_QUOTES = new Set(["USDT","USDC","FDUSD","TUSD","DAI"]);
 const MIN_NET_PROFIT_ROOM_PCT = 2.2;
 const MIN_TP1_AFTER_COST_PCT = 3.2;
 const OUT = path.join(process.cwd(), "public", "tracker-db.json");
-const VERSION = "v10.20-real-data-execution-radar";
+const VERSION = "v10.20.2-real-data-auto-worker";
 const MAJOR_QUOTES = new Set(["USDC","USDT","WETH","ETH","WBTC","BTC","SOL","WSOL","BNB","WBNB","DAI","USD"]);
 const STABLE_QUOTES = new Set(["USDC","USDT","DAI","USD"]);
 const MAJOR_DEX = new Set(["uniswap","pancakeswap","raydium","orca","meteora","aerodrome","camelot","sushiswap","curve","balancer","traderjoe","quickswap","ekubo","cetus","velodrome","osmosis"]);
@@ -659,9 +659,15 @@ function envNum(name){
 }
 function feeBpsForMarket(marketType){
   const m = executionMarketLabel({marketType});
-  if(m === "PERP" || m === "FUTURES") return envNum("BINANCE_FUTURES_TAKER_FEE_BPS") ?? envNum("SNITCH_FUTURES_TAKER_FEE_BPS");
-  if(m === "MARGIN") return envNum("BINANCE_MARGIN_TAKER_FEE_BPS") ?? envNum("SNITCH_MARGIN_TAKER_FEE_BPS");
-  return envNum("BINANCE_SPOT_TAKER_FEE_BPS") ?? envNum("SNITCH_SPOT_TAKER_FEE_BPS");
+  // v10.20.2: do not require Hazwan to configure terminal/env before the scanner can run.
+  // Defaults below are Binance standard public taker-rate baselines, not random estimates.
+  // If the user/account has lower VIP/BNB fees, override via env/secrets.
+  const spotDefault = 10;     // 0.10% standard spot taker
+  const futuresDefault = 5;   // 0.05% conservative USD-M taker baseline
+  const marginDefault = 10;   // 0.10% spot-style execution fee; borrow cost stays separate if configured
+  if(m === "PERP" || m === "FUTURES") return envNum("BINANCE_FUTURES_TAKER_FEE_BPS") ?? envNum("SNITCH_FUTURES_TAKER_FEE_BPS") ?? futuresDefault;
+  if(m === "MARGIN") return envNum("BINANCE_MARGIN_TAKER_FEE_BPS") ?? envNum("SNITCH_MARGIN_TAKER_FEE_BPS") ?? marginDefault;
+  return envNum("BINANCE_SPOT_TAKER_FEE_BPS") ?? envNum("SNITCH_SPOT_TAKER_FEE_BPS") ?? spotDefault;
 }
 function marginBorrowBps(){ return envNum("BINANCE_MARGIN_BORROW_BPS") ?? envNum("SNITCH_MARGIN_BORROW_BPS"); }
 function parseHoldings(){
@@ -767,29 +773,52 @@ function bucketBonus(buckets){
   if(b.has("NEW_LISTING") && (b.has("TOP_GAINER")||b.has("TOP_LOSER"))) s+=8;
   return s;
 }
-function selectMeasuredSide({marketType, ticker, kstats, obm, holdingsQty}){
+function measuredLevelsForSide({side, entry, ticker, kstats}){
+  // All levels below are taken from measured exchange data: orderbook entry, ticker high/low, and actual candles.
+  const high24 = n(ticker?.highPrice);
+  const low24 = n(ticker?.lowPrice);
+  const lastRows = kstats?.rows || [];
+  const lows = lastRows.slice(-24).map(x=>n(x.low)).filter(x=>x>0 && x<entry).sort((a,b)=>b-a);   // nearest measured support below entry
+  const highs = lastRows.slice(-24).map(x=>n(x.high)).filter(x=>x>entry).sort((a,b)=>a-b); // nearest measured resistance above entry
+  if(side === "BUY"){
+    const tpCandidates = [kstats?.swingHigh, high24, ...highs].map(n).filter(x=>x>entry);
+    const slCandidates = [...lows, kstats?.swingLow, low24].map(n).filter(x=>x>0 && x<entry);
+    return {tp: tpCandidates.length ? Math.max(...tpCandidates) : 0, sl: slCandidates.length ? Math.max(...slCandidates) : 0};
+  }
+  const tpCandidates = [kstats?.swingLow, low24, ...lows].map(n).filter(x=>x>0 && x<entry);
+  const slCandidates = [...highs, kstats?.swingHigh, high24].map(n).filter(x=>x>entry);
+  return {tp: tpCandidates.length ? Math.min(...tpCandidates) : 0, sl: slCandidates.length ? Math.min(...slCandidates) : 0};
+}
+function selectMeasuredSide({marketType, ticker, kstats, obm, holdingsQty, forcedSide=null}){
   const h24=n(ticker?.priceChangePercent);
   const entryBuy=obm?.bestAsk, entrySell=obm?.bestBid;
   if(!kstats || !obm) return null;
-  const nearHigh = entryBuy>0 && kstats.swingHigh>0 ? ((kstats.swingHigh-entryBuy)/entryBuy)*100 : 0;
-  const nearLow = entrySell>0 && kstats.swingLow>0 ? ((entrySell-kstats.swingLow)/entrySell)*100 : 0;
   const lastBear = kstats.last.close < kstats.last.open;
   const lastBull = kstats.last.close > kstats.last.open;
   const m=executionMarketLabel({marketType});
 
-  // BUY: measured upside target exists and current candle not at exhaustion.
-  if(entryBuy>0 && kstats.swingHigh>entryBuy && h24>=0 && !lastBear){
-    return {side:"BUY", entry:entryBuy, tp:kstats.swingHigh, sl:kstats.swingLow, decisionSource:"measured-upside-structure"};
-  }
-  // SELL spot only if holding exists; otherwise sell-side is futures/perp/margin short only.
   const canSellSpot = m === "SPOT" && n(holdingsQty)>0;
   const canShort = m === "PERP" || m === "FUTURES" || m === "MARGIN";
-  if(entrySell>0 && kstats.swingLow<entrySell && (h24<=0 || nearHigh <= kstats.candleNoisePct || lastBear) && (canSellSpot || canShort)){
-    return {side:"SELL", entry:entrySell, tp:kstats.swingLow, sl:kstats.swingHigh, decisionSource:canSellSpot?"measured-holding-exit":"measured-short-structure"};
+
+  if((!forcedSide || forcedSide === "BUY") && entryBuy>0){
+    const levels = measuredLevelsForSide({side:"BUY", entry:entryBuy, ticker, kstats});
+    const hasMeasuredUpside = levels.tp > entryBuy && levels.sl > 0 && levels.sl < entryBuy;
+    const notImmediateDump = h24 >= -3 && !lastBear;
+    const continuation = h24 >= 0 && lastBull;
+    const recovery = h24 < 0 && lastBull && entryBuy > levels.sl;
+    if(hasMeasuredUpside && notImmediateDump && (continuation || recovery || h24 >= 1)){
+      return {side:"BUY", entry:entryBuy, tp:levels.tp, sl:levels.sl, decisionSource:"measured-binance-upside-structure"};
+    }
   }
-  // Overextended top gainer: only consider downside on short-capable market if measured candle confirms weakness.
-  if(canShort && h24>7 && lastBear && entrySell>0 && kstats.swingLow<entrySell){
-    return {side:"SELL", entry:entrySell, tp:kstats.swingLow, sl:kstats.swingHigh, decisionSource:"measured-top-gainer-exhaustion"};
+
+  if((!forcedSide || forcedSide === "SELL") && entrySell>0 && (canSellSpot || canShort)){
+    const levels = measuredLevelsForSide({side:"SELL", entry:entrySell, ticker, kstats});
+    const hasMeasuredDownside = levels.tp > 0 && levels.tp < entrySell && levels.sl > entrySell;
+    const bearishNow = lastBear || h24 <= -1;
+    const overextendedWeakness = h24 >= 7 && lastBear;
+    if(hasMeasuredDownside && (bearishNow || overextendedWeakness)){
+      return {side:"SELL", entry:entrySell, tp:levels.tp, sl:levels.sl, decisionSource:canSellSpot?"measured-holding-exit":"measured-short-structure"};
+    }
   }
   return null;
 }
@@ -869,7 +898,7 @@ async function buildMeasuredBinanceRecord({sym,ticker,marketType,buckets,oldBySy
     const canSellSpot = preferredMarket === "SPOT" && holdingQty > 0;
     const canShort = preferredMarket === "PERP" || preferredMarket === "FUTURES" || preferredMarket === "MARGIN";
     if(side0 === "SELL" && !(canSellSpot || canShort)) continue;
-    const selected = selectMeasuredSide({marketType:preferredMarket, ticker, kstats, obm, holdingsQty:holdingQty});
+    const selected = selectMeasuredSide({marketType:preferredMarket, ticker, kstats, obm, holdingsQty:holdingQty, forcedSide:side0});
     if(!selected || selected.side !== side0) continue;
     if(preferredMarket === "MARGIN" && marginBorrowBps() === null) continue;
     const feas = slTpFeasibility({side:selected.side, entry:selected.entry, tp:selected.tp, sl:selected.sl, obm, kstats, marketType:preferredMarket, fundingRate:funding, feeBps, notionalUsd:V1020_NOTIONAL_USD});
@@ -913,10 +942,7 @@ async function fetchBinanceUniverse(oldRecords=[]){
   const out=[];
   const oldBySymbol=new Map();
   for(const r of oldRecords||[]) if(r?.binanceSymbol) oldBySymbol.set(String(r.binanceSymbol).toUpperCase(), r);
-  const missingFees=[];
-  if(feeBpsForMarket("SPOT")===null) missingFees.push("BINANCE_SPOT_TAKER_FEE_BPS");
-  if(feeBpsForMarket("PERP")===null) missingFees.push("BINANCE_FUTURES_TAKER_FEE_BPS");
-  if(missingFees.length) console.warn("v10.20 measured-fee gate: missing", missingFees.join(", "), "— related markets hidden.");
+  // v10.20.2 has safe public fee defaults, so GitHub Actions can generate rows immediately after replacement/push.
   try{
     const [info,tickers]=await Promise.all([
       fetchJson("https://api.binance.com/api/v3/exchangeInfo"),

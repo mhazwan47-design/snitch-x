@@ -3,6 +3,8 @@ name: SNITCH X Background Tracker
 on:
   push:
     branches: [ main, master ]
+    paths-ignore:
+      - "public/tracker-db.json"
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
@@ -15,6 +17,7 @@ on:
         options:
           - "false"
           - "true"
+
 permissions:
   contents: write
 
@@ -28,6 +31,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -50,6 +56,17 @@ jobs:
         run: |
           git config user.name "snitch-x-bot"
           git config user.email "actions@github.com"
+
           git add public/tracker-db.json
-          git diff --cached --quiet && echo "No tracker changes" || git commit -m "Update SNITCH X tracker database"
-          git push
+
+          if git diff --cached --quiet; then
+            echo "No tracker changes"
+            exit 0
+          fi
+
+          git commit -m "Update SNITCH X tracker database"
+
+          # Remote may have newer commits if you pushed while this workflow was running.
+          # Rebase the bot commit on top of latest remote before pushing.
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

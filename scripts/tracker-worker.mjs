@@ -1006,7 +1006,7 @@ async function main(){
     }
   }
 
-  const enableDexLegacy = String(process.env.SNITCH_ENABLE_DEX_LEGACY || "false").toLowerCase() === "true";
+  const enableDexLegacy = String(process.env.SNITCH_ENABLE_DEX_LEGACY || "true").toLowerCase() === "true";
   for(const token of (enableDexLegacy ? RADAR : [])){
     try{
       const pairs=await fetchPairs(token);

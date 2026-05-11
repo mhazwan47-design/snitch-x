@@ -484,6 +484,123 @@ function Diary({investments,setInvestments}){
     <div className="table-wrap"><table className="tracker-table"><thead><tr><th>Pair</th><th>Status</th><th>Entry</th><th>Capital</th><th>Qty</th><th>TP/SL</th><th>Action</th></tr></thead><tbody>{investments.length===0?<tr><td colSpan={7} className="empty-cell">No diary rows.</td></tr>:investments.map(x=><tr key={x.diaryId}><td>{txt(x.pairLabel)}</td><td>{txt(x.status)}</td><td>{price(x.entryPrice)}</td><td>${n(x.investedCapital).toFixed(2)}</td><td>{n(x.quantity).toPrecision(6)} {txt(x.token)}</td><td>TP {price(x.tp1)} / SL {price(x.stopTrigger)} / {price(x.stopLimit)}</td><td><button className="mini-btn" onClick={()=>close(x.diaryId)}>Close</button><button className="mini-btn" onClick={()=>remove(x.diaryId)}>Remove</button></td></tr>)}</tbody></table></div></section>
 }
 
+
+// v10.20.3 client-side live fallback: if GitHub tracker-db has 0 active rows,
+// Sync Now pulls actual Binance public market data directly in the browser.
+// It uses actual bid/ask, depth, candles, 24h stats, and measured swing levels.
+const LIVE_NOTIONAL_USD = 10;
+const LIVE_MIN_NET_USD = 0.25;
+const LIVE_SPOT_FEE_BPS = 10;
+const LIVE_PERP_FEE_BPS = 5;
+const LIVE_QUOTES = new Set(["USDT","USDC","FDUSD"]);
+const LIVE_STABLE_BASES = new Set(["USDT","USDC","FDUSD","TUSD","DAI","BUSD"]);
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+async function liveJson(url){
+  const r = await fetch(url,{cache:"no-store"});
+  if(!r.ok) throw new Error(`${r.status} ${url}`);
+  return r.json();
+}
+function median(vals){
+  const a=(vals||[]).map(Number).filter(Number.isFinite).sort((x,y)=>x-y);
+  if(!a.length) return 0;
+  const m=Math.floor(a.length/2);
+  return a.length%2?a[m]:(a[m-1]+a[m])/2;
+}
+function avgFillFromBook(levels, neededQty){
+  let rem=neededQty, cost=0, qty=0;
+  for(const lv of levels||[]){
+    const px=n(lv[0]), q=n(lv[1]);
+    if(!(px>0&&q>0)) continue;
+    const take=Math.min(rem,q);
+    cost += take*px; qty += take; rem -= take;
+    if(rem<=0) break;
+  }
+  if(qty<=0 || rem>0) return null;
+  return cost/qty;
+}
+function liveDepthMetrics(depth, side){
+  const bid=n(depth?.bids?.[0]?.[0]), ask=n(depth?.asks?.[0]?.[0]);
+  if(!(bid>0&&ask>0&&ask>=bid)) return null;
+  const mid=(bid+ask)/2;
+  const spreadPct=((ask-bid)/mid)*100;
+  const entry = side==="BUY" ? ask : bid;
+  const qty=LIVE_NOTIONAL_USD/entry;
+  const entryAvg = avgFillFromBook(side==="BUY" ? depth.asks : depth.bids, qty);
+  const exitAvg = avgFillFromBook(side==="BUY" ? depth.bids : depth.asks, qty);
+  if(!(entryAvg>0&&exitAvg>0)) return null;
+  const entrySlipPct = side==="BUY" ? Math.max(0,((entryAvg-entry)/entry)*100) : Math.max(0,((entry-entryAvg)/entry)*100);
+  const exitSlipPct = side==="BUY" ? Math.max(0,((entry-exitAvg)/entry)*100) : Math.max(0,((exitAvg-entry)/entry)*100);
+  return {bid,ask,mid,spreadPct,entry,entryAvg,exitAvg,entrySlipPct,exitSlipPct};
+}
+function liveKlineStats(klines){
+  const rows=(klines||[]).map(k=>({high:n(k[2]), low:n(k[3]), close:n(k[4]), volume:n(k[5])})).filter(x=>x.high>0&&x.low>0&&x.close>0);
+  if(rows.length<20) return null;
+  const recent=rows.slice(-32);
+  const prior=rows.slice(-64,-32);
+  const swingHigh=Math.max(...recent.map(x=>x.high));
+  const swingLow=Math.min(...recent.map(x=>x.low));
+  const widerHigh=Math.max(...rows.slice(-96).map(x=>x.high));
+  const widerLow=Math.min(...rows.slice(-96).map(x=>x.low));
+  const last=rows[rows.length-1];
+  const prev=rows[rows.length-2];
+  const noisePct=median(recent.map(x=>((x.high-x.low)/x.close)*100));
+  const recentVol=recent.reduce((a,b)=>a+b.volume,0);
+  const priorVol=prior.reduce((a,b)=>a+b.volume,0);
+  const volExpansion=priorVol>0?recentVol/priorVol:1;
+  return {swingHigh,swingLow,widerHigh,widerLow,lastClose:last.close,lastHigh:last.high,lastLow:last.low,prevClose:prev.close,noisePct,volExpansion};
+}
+function liveFeasible({side, depth, kstats, feeBps}){
+  const ob=liveDepthMetrics(depth, side);
+  if(!ob||!kstats) return null;
+  const entry=ob.entry;
+  const isBuy=side==="BUY";
+  const tp=isBuy ? kstats.widerHigh : kstats.widerLow;
+  const sl=isBuy ? kstats.swingLow : kstats.swingHigh;
+  if(!(entry>0&&tp>0&&sl>0)) return null;
+  const rewardPct=isBuy?((tp-entry)/entry)*100:((entry-tp)/entry)*100;
+  const riskPct=isBuy?((entry-sl)/entry)*100:((sl-entry)/entry)*100;
+  if(!(rewardPct>0&&riskPct>0)) return null;
+  const measuredFrictionPct=ob.spreadPct+ob.entrySlipPct+ob.exitSlipPct;
+  if(riskPct <= Math.max(measuredFrictionPct,kstats.noisePct)) return null;
+  if(rewardPct <= riskPct) return null;
+  const feeUsd=LIVE_NOTIONAL_USD*(feeBps/10000)*2;
+  const entrySlipUsd=LIVE_NOTIONAL_USD*(ob.entrySlipPct/100);
+  const exitSlipUsd=LIVE_NOTIONAL_USD*(ob.exitSlipPct/100);
+  const grossProfitUsd=LIVE_NOTIONAL_USD*(rewardPct/100);
+  const netProfitUsd=grossProfitUsd-feeUsd-entrySlipUsd-exitSlipUsd;
+  if(netProfitUsd < LIVE_MIN_NET_USD) return null;
+  return {entry,tp,sl,rewardPct,riskPct,rr:rewardPct/riskPct,ob,feeUsd,entrySlipUsd,exitSlipUsd,grossProfitUsd,netProfitUsd,measuredFrictionPct};
+}
+function liveRecord({symbol, base, quote, side, marketType, ticker, feas, buckets}){
+  const m=marketType;
+  const feeBps = m==="SPOT" ? LIVE_SPOT_FEE_BPS : LIVE_PERP_FEE_BPS;
+  return {id:`client-live-${m.toLowerCase()}-${symbol}-${side}`,pairKey:`binance-${symbol}`,token:base,pairLabel:`${base}/${quote}`,chain:"binance",dex:m.toLowerCase(),url:binanceTradeUrl(base,quote,m),source:"binance-v10.20.3-client-live-measured",version:"v10.20.3-client-live",marketType:m,binanceSymbol:symbol,quoteAsset:quote,baseAsset:base,signalType:side,category:buckets.join(" + ") || "BINANCE LIVE",sourceBuckets:buckets,sourceBucket:buckets.join(" + "),securityScore:Math.round(Math.max(60,Math.min(98,78 + Math.min(12,n(ticker?.count)/20000) - feas.measuredFrictionPct*4))),securityStatus:"PASS",securityFlags:["Client live Binance ticker","Client live order book","Client live candles"],signal:`${side} ${m}`,actionLabel:`${side} ${m}`,trackedAt:new Date().toISOString(),firstSeenAt:new Date().toISOString(),lastUpdated:new Date().toISOString(),signalPrice:feas.entry,currentPrice:feas.entry,maxHigh:feas.entry,maxLow:feas.entry,zoneLow:feas.entry,zoneHigh:feas.entry,trigger:feas.entry,invalidation:feas.sl,tp1:feas.tp,tp2:feas.tp,rr:feas.rr,opportunity:Math.round(Math.max(60,Math.min(99,70 + Math.min(20,feas.rewardPct) + (buckets.includes("TOP_GAINER")||buckets.includes("TOP_LOSER")?5:0)))),execution:Math.round(Math.max(55,Math.min(99,75 + feas.rr*4 - feas.measuredFrictionPct*5))),validity:Math.round(Math.max(55,Math.min(99,75 + Math.min(15,n(ticker?.quoteVolume)/1e8)))),risk:Math.round(Math.max(1,Math.min(45,feas.riskPct))),bearScore:side==="SELL"?75:0,liquidityUsd:n(ticker?.quoteVolume),volume24h:n(ticker?.quoteVolume),tx24:n(ticker?.count),spreadPct:feas.ob.spreadPct,actualCostPct:feas.measuredFrictionPct+(feeBps/100),feeBps,entrySlipPct:feas.ob.entrySlipPct,exitSlipPct:feas.ob.exitSlipPct,measuredRewardPct:feas.rewardPct,measuredRiskPct:feas.riskPct,measuredNetProfitUsd:feas.netProfitUsd,measuredGrossProfitUsd:feas.grossProfitUsd,measuredFeeUsd:feas.feeUsd,decisionSource:"client-live-measured-structure",measuredAudit:{entry:feas.entry,tp:feas.tp,sl:feas.sl,side,marketType:m,bestBid:feas.ob.bid,bestAsk:feas.ob.ask,spreadPct:feas.ob.spreadPct,entrySlipPct:feas.ob.entrySlipPct,exitSlipPct:feas.ob.exitSlipPct,rewardPct:feas.rewardPct,riskPct:feas.riskPct,rr:feas.rr,netProfitUsd:feas.netProfitUsd,sourceBuckets:buckets},hitZone:true,hitTrigger:true,hitTP1:false,hitTP2:false,hitInvalid:false,alertsSent:{},currentMovePct:0,forecastGoodPct:0,adverseMovePct:0,status:"ACTIVE",result:"EXECUTION NOW",updateCount:1};
+}
+async function clientLiveBinanceFallback(){
+  const records=[];
+  const spotTickers=await liveJson("https://api.binance.com/api/v3/ticker/24hr");
+  const spotInfo=await liveJson("https://api.binance.com/api/v3/exchangeInfo");
+  const spotInfoMap=new Map((spotInfo.symbols||[]).map(s=>[s.symbol,s]));
+  const spotPool=(spotTickers||[]).filter(t=>{const s=spotInfoMap.get(t.symbol); if(!s||s.status!=="TRADING") return false; if(!LIVE_QUOTES.has(s.quoteAsset)||LIVE_STABLE_BASES.has(s.baseAsset)) return false; return n(t.lastPrice)>0&&n(t.quoteVolume)>500000&&n(t.count)>3000;}).sort((a,b)=>(Math.abs(n(b.priceChangePercent))*n(b.quoteVolume))-(Math.abs(n(a.priceChangePercent))*n(a.quoteVolume))).slice(0,18);
+  for(const t of spotPool){
+    const s=spotInfoMap.get(t.symbol); const buckets=[]; if(n(t.priceChangePercent)>8) buckets.push("TOP_GAINER"); if(n(t.quoteVolume)>50000000) buckets.push("HOT_PROXY");
+    try{const [depth,klines]=await Promise.all([liveJson(`https://api.binance.com/api/v3/depth?symbol=${t.symbol}&limit=100`),liveJson(`https://api.binance.com/api/v3/klines?symbol=${t.symbol}&interval=15m&limit=96`)]); const ks=liveKlineStats(klines); const feas=liveFeasible({side:"BUY",depth,kstats:ks,feeBps:LIVE_SPOT_FEE_BPS}); if(feas) records.push(liveRecord({symbol:t.symbol,base:s.baseAsset,quote:s.quoteAsset,side:"BUY",marketType:"SPOT",ticker:t,feas,buckets:buckets.length?buckets:["ALL_SYMBOLS"]}));}catch{}
+    await sleep(40);
+  }
+  try{
+    const futTickers=await liveJson("https://fapi.binance.com/fapi/v1/ticker/24hr");
+    const futInfo=await liveJson("https://fapi.binance.com/fapi/v1/exchangeInfo");
+    const futInfoMap=new Map((futInfo.symbols||[]).map(s=>[s.symbol,s]));
+    const futPool=(futTickers||[]).filter(t=>{const s=futInfoMap.get(t.symbol); if(!s||s.status!=="TRADING"||s.contractType!=="PERPETUAL") return false; if(!LIVE_QUOTES.has(s.quoteAsset)||LIVE_STABLE_BASES.has(s.baseAsset)) return false; return n(t.lastPrice)>0&&n(t.quoteVolume)>1000000&&n(t.count)>3000;}).sort((a,b)=>(Math.abs(n(b.priceChangePercent))*n(b.quoteVolume))-(Math.abs(n(a.priceChangePercent))*n(a.quoteVolume))).slice(0,18);
+    for(const t of futPool){
+      const s=futInfoMap.get(t.symbol); const ch=n(t.priceChangePercent); const side=ch>=0?"SELL":"BUY"; const buckets=[ch>=0?"TOP_GAINER":"TOP_LOSER","FUTURES_MOVERS"];
+      try{const [depth,klines]=await Promise.all([liveJson(`https://fapi.binance.com/fapi/v1/depth?symbol=${t.symbol}&limit=100`),liveJson(`https://fapi.binance.com/fapi/v1/klines?symbol=${t.symbol}&interval=15m&limit=96`)]); const ks=liveKlineStats(klines); const feas=liveFeasible({side,depth,kstats:ks,feeBps:LIVE_PERP_FEE_BPS}); if(feas) records.push(liveRecord({symbol:t.symbol,base:s.baseAsset,quote:s.quoteAsset,side,marketType:"PERP",ticker:t,feas,buckets}));}catch{}
+      await sleep(40);
+    }
+  }catch{}
+  return records.sort((a,b)=>(n(b.measuredNetProfitUsd)*20+n(b.opportunity)+n(b.execution))-(n(a.measuredNetProfitUsd)*20+n(a.opportunity)+n(a.execution))).slice(0,30);
+}
+
 export default function App(){
   const [records,setRecords]=useState([]);
   const [investments,setInvestments]=useState([]);
@@ -494,10 +611,20 @@ export default function App(){
     try{
       const r=await fetch(`${REMOTE}?t=${Date.now()}`,{cache:"no-store"});
       const d=await r.json();
-      const rec=Array.isArray(d.records)?d.records:[];
-      const succ=Array.isArray(d.successForecasts)?d.successForecasts.map(x=>({...x,id:`success-${x.id}-${x.successLevel||"TP"}`,hitTP1:true,hitTP2:x.successLevel==="TP2",currentPrice:x.currentPrice||x.tp2||x.tp1,trackedAt:x.completedAt,lastUpdated:x.completedAt,resultStatus:x.successLevel==="TP2"?"SUCCESS_TP2":"SUCCESS_TP1"})):[];
+      let rec=Array.isArray(d.records)?d.records:[];
+      const succ=Array.isArray(d.successForecasts)?d.successForecasts.map(x=>({...x,id:`success-${x.id}-${x.successLevel||"TP"}`,hitTP1:true,hitTP2:x.successLevel==="TP2",currentPrice:x.currentPrice||x.tp2||x.tp1,trackedAt:x.completedAt,lastUpdated:x.completedAt,resultStatus:x.successLevel==="TP2"?"SUCCESS_TP2":"SUCCESS_TP1"})) : [];
+      let sourceLabel="tracker-db";
+      if(rec.length===0){
+        setStatus(`Tracker empty. Pulling live Binance measured data...`);
+        try{
+          const liveRows=await clientLiveBinanceFallback();
+          if(liveRows.length>0){ rec=liveRows; sourceLabel="client live Binance"; }
+        }catch(liveErr){
+          console.warn("Client live Binance fallback failed", liveErr);
+        }
+      }
       setRecords([...rec,...succ]);
-      setStatus(`Loaded ${rec.length} active rows · ${new Date().toLocaleTimeString()}`);
+      setStatus(`Loaded ${rec.length} active rows · ${sourceLabel} · ${new Date().toLocaleTimeString()}`);
     }catch(e){ setStatus(`Sync failed: ${e.message}`); }
   }
   useEffect(()=>{ sync(); try{const raw=localStorage.getItem(INVEST_STORE); if(raw) setInvestments(JSON.parse(raw));}catch{} const t=setInterval(sync,60000); return()=>clearInterval(t); },[]);

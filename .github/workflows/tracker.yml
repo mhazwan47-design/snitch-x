@@ -1,35 +1,28 @@
 name: SNITCH X Background Tracker
 
 on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
   push:
-    branches: [ main, master ]
+    branches:
+      - main
     paths-ignore:
       - "public/tracker-db.json"
-  schedule:
-    - cron: "*/15 * * * *"
-  workflow_dispatch:
-    inputs:
-      test_telegram:
-        description: "Send Telegram test message only"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
 
 permissions:
   contents: write
 
 concurrency:
-  group: snitch-x-tracker
-  cancel-in-progress: true
+  group: snitch-x-tracker-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   tracker:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -40,34 +33,63 @@ jobs:
         with:
           node-version: 20
 
-      - name: Run SNITCH X full background worker
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run SNITCH X tracker worker
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TEST_TELEGRAM: ${{ github.event.inputs.test_telegram }}
-          BINANCE_SPOT_TAKER_FEE_BPS: 10
-          BINANCE_FUTURES_TAKER_FEE_BPS: 5
-          BINANCE_MARGIN_TAKER_FEE_BPS: 10
-          SNITCH_TRADE_NOTIONAL_USD: 10
-          SNITCH_MIN_NET_PROFIT_USD: 0.50
-          SNITCH_ENABLE_DEX_LEGACY: "true"
+          BINANCE_SPOT_TAKER_FEE_BPS: ${{ secrets.BINANCE_SPOT_TAKER_FEE_BPS || '10' }}
+          BINANCE_FUTURES_TAKER_FEE_BPS: ${{ secrets.BINANCE_FUTURES_TAKER_FEE_BPS || '5' }}
+          BINANCE_MARGIN_TAKER_FEE_BPS: ${{ secrets.BINANCE_MARGIN_TAKER_FEE_BPS || '10' }}
+          SNITCH_TRADE_NOTIONAL_USD: ${{ secrets.SNITCH_TRADE_NOTIONAL_USD || '10' }}
+          SNITCH_MIN_NET_PROFIT_USD: ${{ secrets.SNITCH_MIN_NET_PROFIT_USD || '0.50' }}
+          SNITCH_HOLDINGS_JSON: ${{ secrets.SNITCH_HOLDINGS_JSON || '{}' }}
         run: node scripts/tracker-worker.mjs
 
-      - name: Commit tracker database
+      - name: Commit tracker database without merge conflict
+        shell: bash
         run: |
+          set -euo pipefail
+
           git config user.name "snitch-x-bot"
-          git config user.email "actions@github.com"
+          git config user.email "snitch-x-bot@users.noreply.github.com"
 
-          git add public/tracker-db.json
+          DB_FILE="public/tracker-db.json"
+          TMP_DB="/tmp/snitch-tracker-db.json"
+          BRANCH="${GITHUB_REF_NAME:-main}"
 
-          if git diff --cached --quiet; then
-            echo "No tracker changes"
+          if [ ! -f "$DB_FILE" ]; then
+            echo "No $DB_FILE produced by worker. Nothing to commit."
             exit 0
           fi
 
-          git commit -m "Update SNITCH X tracker database"
+          cp "$DB_FILE" "$TMP_DB"
 
-          # Remote may have newer commits if you pushed while this workflow was running.
-          # Rebase the bot commit on top of latest remote before pushing.
-          git pull --rebase origin "${GITHUB_REF_NAME}"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          for attempt in 1 2 3; do
+            echo "Commit attempt $attempt"
+
+            git fetch origin "$BRANCH"
+            git reset --hard "origin/$BRANCH"
+
+            mkdir -p public
+            cp "$TMP_DB" "$DB_FILE"
+
+            if git diff --quiet -- "$DB_FILE"; then
+              echo "No tracker database changes after syncing latest remote."
+              exit 0
+            fi
+
+            git add "$DB_FILE"
+            git commit -m "Update SNITCH X tracker database"
+
+            if git push origin "HEAD:$BRANCH"; then
+              echo "Tracker database pushed successfully."
+              exit 0
+            fi
+
+            echo "Push failed, retrying against latest remote..."
+            sleep 3
+          done
+
+          echo "Failed to push tracker database after retries."
+          exit 1

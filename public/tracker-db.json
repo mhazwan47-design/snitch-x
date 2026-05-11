@@ -1,7 +1,25 @@
 {
-  "version": "v10.20.3-client-live-fallback",
-  "updatedAt": null,
+  "version": "v10.20.2-real-data-auto-worker",
+  "updatedAt": "2026-05-11T18:16:10.481Z",
+  "meta": {
+    "radarTokens": [],
+    "binanceAllMarket": true,
+    "v1020RealDataExecutionRadar": true,
+    "noEstimationRule": true,
+    "requiredFeeEnv": [
+      "BINANCE_SPOT_TAKER_FEE_BPS",
+      "BINANCE_FUTURES_TAKER_FEE_BPS",
+      "BINANCE_MARGIN_TAKER_FEE_BPS optional"
+    ],
+    "discovered": 0,
+    "updated": 0,
+    "scannedPairs": 0,
+    "alerts": 0,
+    "successes": 0,
+    "totalActiveValidRecords": 0,
+    "totalSuccessForecasts": 0,
+    "cleanup": "fresh_active_records_rebuilt_each_run_success_history_only"
+  },
   "records": [],
-  "successForecasts": [],
-  "note": "If tracker-db is empty, App.jsx Sync Now fetches actual Binance public market data directly in browser."
+  "successForecasts": []
 }

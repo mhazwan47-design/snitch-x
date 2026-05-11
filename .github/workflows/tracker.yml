@@ -1,8 +1,10 @@
 name: SNITCH X Background Tracker
 
 on:
+  push:
+    branches: [ main, master ]
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       test_telegram:
@@ -13,7 +15,6 @@ on:
         options:
           - "false"
           - "true"
-
 permissions:
   contents: write
 
@@ -24,7 +25,6 @@ concurrency:
 jobs:
   tracker:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,10 +39,14 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TEST_TELEGRAM: ${{ github.event.inputs.test_telegram }}
+          BINANCE_SPOT_TAKER_FEE_BPS: 10
+          BINANCE_FUTURES_TAKER_FEE_BPS: 5
+          BINANCE_MARGIN_TAKER_FEE_BPS: 10
+          SNITCH_TRADE_NOTIONAL_USD: 10
+          SNITCH_MIN_NET_PROFIT_USD: 0.50
         run: node scripts/tracker-worker.mjs
 
       - name: Commit tracker database
-        if: ${{ github.event.inputs.test_telegram != 'true' }}
         run: |
           git config user.name "snitch-x-bot"
           git config user.email "actions@github.com"

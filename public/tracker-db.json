@@ -1,6 +1,6 @@
 {
   "version": "v10.20.2-real-data-auto-worker",
-  "updatedAt": "2026-08-24T23:43:31.976Z",
+  "updatedAt": "2026-08-25T00:45:10.823Z",
   "meta": {
     "radarTokens": [
       "AAVE",
@@ -48,7 +48,7 @@
     ],
     "discovered": 0,
     "updated": 0,
-    "scannedPairs": 840,
+    "scannedPairs": 1020,
     "alerts": 0,
     "successes": 0,
     "totalActiveValidRecords": 0,
